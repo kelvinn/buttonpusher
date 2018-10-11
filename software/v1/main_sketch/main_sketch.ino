@@ -1,6 +1,7 @@
 
 #include <Servo.h>
 #include <SoftwareSerial.h>  
+#include <CurieBLE.h>
 
 int powerControl = 3; // D3 pin connected to MOSFET gate
 int bluetoothTx = 6;  // TX-O pin of bluetooth mate, Arduino D2
@@ -45,6 +46,11 @@ void setup() {
 
   delay(500);               // Short delay to let servo return to default position
 
+  // initialize the BLE hardware
+  BLE.begin();
+  BLE.scanForUuid("19b10000-e8f2-537e-4f6c-d104768a1214");
+  
+  
   Serial.println("Turning OFF Mosfet");
   digitalWrite(powerControl, LOW);
   servo.detach();
@@ -74,9 +80,75 @@ void push_button() {
    delay(1000);                     // Let servo detach
 }
 
+void controlServo(BLEDevice peripheral) {
+  // connect to the peripheral
+  Serial.println("Connecting ...");
+
+  if (peripheral.connect()) {
+    Serial.println("Connected");
+  } else {
+    Serial.println("Failed to connect!");
+    return;
+  }
+
+  // discover peripheral attributes
+  Serial.println("Discovering attributes ...");
+  if (peripheral.discoverAttributes()) {
+    Serial.println("Attributes discovered");
+  } else {
+    Serial.println("Attribute discovery failed!");
+    peripheral.disconnect();
+    return;
+  }
+  
+  while (peripheral.connected()) {
+    // while the peripheral is connection
+
+    // read the button pin
+    int buttonState = digitalRead(buttonPin);
+
+    if (oldButtonState != buttonState) {
+      // button changed
+      oldButtonState = buttonState;
+
+      if (buttonState) {
+        Serial.println("button pressed");
+
+        // button is pressed, write 0x01 to turn the LED on
+        ledCharacteristic.writeByte(0x01);
+      } else {
+        Serial.println("button released");
+
+      }
+    }
+  }
+}
+
 void loop() {
 
   currentMillis = millis();
+
+    // check if a peripheral has been discovered
+  BLEDevice peripheral = BLE.available();
+
+  if (peripheral) {
+    // discovered a peripheral, print out address, local name, and advertised service
+    Serial.print("Found ");
+    Serial.print(peripheral.address());
+    Serial.print(" '");
+    Serial.print(peripheral.localName());
+    Serial.print("' ");
+    Serial.print(peripheral.advertisedServiceUuid());
+    Serial.println();
+
+    // stop scanning
+    BLE.stopScan();
+
+    controlServo(peripheral);
+
+    // peripheral disconnected, start scanning again
+    BLE.scanForUuid("19b10000-e8f2-537e-4f6c-d104768a1214");
+  }
   
   if(bluetooth.available())  // If the bluetooth sent any characters
   {
